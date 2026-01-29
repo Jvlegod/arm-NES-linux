@@ -60,15 +60,48 @@ static int *zoom_y_tab;
 extern int InitJoypadInput(void);
 extern int GetJoypadInput(void);
 
+static inline void rgb555_to_rgb888(uint16_t c, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    *r = ((c >> 10) & 0x1F) * 255 / 31;
+    *g = ((c >>  5) & 0x1F) * 255 / 31;
+    *b = ((c >>  0) & 0x1F) * 255 / 31;
+}
+
+static inline uint32_t pack_pixel(uint8_t r, uint8_t g, uint8_t b)
+{
+    uint32_t pix = 0;
+
+    uint32_t rv = r >> (8 - var.red.length);
+    uint32_t gv = g >> (8 - var.green.length);
+    uint32_t bv = b >> (8 - var.blue.length);
+
+    pix |= (rv << var.red.offset);
+    pix |= (gv << var.green.offset);
+    pix |= (bv << var.blue.offset);
+
+    if (var.transp.length)
+        pix |= (((1u << var.transp.length) - 1u) << var.transp.offset);
+
+    return pix;
+}
+
 static int lcd_fb_display_px(WORD color, int x, int y)
 {
-	unsigned char  *pen8;
-	unsigned short *pen16;
-	pen8 = (unsigned char *)(fb_mem + y*line_width + x*px_width);
-	pen16 = (unsigned short *)pen8;
-	*pen16 = color;
-	
-	return 0;
+    uint8_t r, g, b;
+    // rgb565_to_rgb888((uint16_t)color, &r, &g, &b);
+	rgb555_to_rgb888((uint16_t)color, &r, &g, &b);
+    uint32_t pix = pack_pixel(r, g, b);
+
+    uint8_t *p = (uint8_t *)(fb_mem + y * line_width + x * px_width);
+
+    if (var.bits_per_pixel == 16) {
+        *(uint16_t *)p = (uint16_t)pix;
+    } else if (var.bits_per_pixel == 32) {
+        *(uint32_t *)p = pix;
+    } else {
+        // no
+    }
+    return 0;
 }
 
 static int lcd_fb_init()
@@ -660,6 +693,7 @@ void *InfoNES_MemorySet( void *dest, int c, int count )
 /*           Transfer the contents of work frame on the screen       */
 /*                                                                   */
 /*===================================================================*/
+
 void InfoNES_LoadFrame()
 {
 	int x,y;
@@ -680,7 +714,6 @@ void InfoNES_LoadFrame()
 		}
 	}
 }
-
 
 /*===================================================================*/
 /*                                                                   */
@@ -736,7 +769,7 @@ int InfoNES_SoundOpen( int samples_per_sync, int sample_rate )
 	//samples_per_sync  735
 	unsigned int rate      = sample_rate;
 	snd_pcm_hw_params_t *hw_params;
-	
+	return 0;
 	if(0 > snd_pcm_open(&playback_handle, "default", SND_PCM_STREAM_PLAYBACK, 0)) 
 	{
 		printf("snd_pcm_open err\n");
@@ -819,8 +852,8 @@ void InfoNES_SoundOutput( int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BY
 	int ret;
 	unsigned char wav;
 	unsigned char *pcmBuf = (unsigned char *)malloc(samples);
-
-	for (i=0; i <samples; i++)
+	return;
+    for (i=0; i <samples; i++)
 	{
 		wav = (wave1[i] + wave2[i] + wave3[i] + wave4[i] + wave5[i]) / 5;
 		//单声道 8位数据
