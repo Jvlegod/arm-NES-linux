@@ -30,7 +30,7 @@
 #define TRUE 1
 #define FALSE 0
 
-/* lcd 操作相关 头文件 */
+/* lcd */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -57,8 +57,8 @@ static struct fb_var_screeninfo var;
 static int *zoom_x_tab;
 static int *zoom_y_tab;
 
-extern int InitJoypadInput(void);
-extern int GetJoypadInput(void);
+extern int InitGameInput(void);
+extern int GetGameInput(void);
 
 static inline void rgb555_to_rgb888(uint16_t c, uint8_t *r, uint8_t *g, uint8_t *b)
 {
@@ -106,22 +106,20 @@ static int lcd_fb_display_px(WORD color, int x, int y)
 
 static int lcd_fb_init()
 {
-	//如果使用 mmap 打开方式 必须是 读定方式
 	fb_fd = open("/dev/fb0", O_RDWR);
 	if(-1 == fb_fd)
 	{
 		printf("cat't open /dev/fb0 \n");
 		return -1;
 	}
-	//获取屏幕参数
+
 	if(-1 == ioctl(fb_fd, FBIOGET_VSCREENINFO, &var))
 	{
 		close(fb_fd);
 		printf("cat't ioctl /dev/fb0 \n");
 		return -1;
 	}
-	
-	//计算参数
+
 	px_width     = var.bits_per_pixel / 8;
 	line_width   = var.xres * px_width;
 	screen_width = var.yres * line_width;
@@ -137,14 +135,11 @@ static int lcd_fb_init()
 		printf("cat't mmap /dev/fb0 \n");
 		return -1;
 	}
-	//清屏
+
 	memset(fb_mem, 0 , screen_width);
 	return 0;
 }
 
-/**
- * 生成zoom 缩放表
- */
 int make_zoom_tab()
 {
 	int i;
@@ -265,11 +260,10 @@ int main( int argc, char **argv )
 	
 	int i;
 	
-	InitJoypadInput();
+	InitGameInput();
 
 	lcd_fb_init();
 
-	//初始化 zoom 缩放表
 	make_zoom_tab();
 
 	/* If a rom name specified, start it */
@@ -277,12 +271,10 @@ int main( int argc, char **argv )
 	{
 		start_application( argv[1] );
 	}
-	
-	//主循环中处理输入事件 声音播放
+
 	while(1)
 	{
-		dwKeyPad1 = GetJoypadInput();
-		//主线程休息一下 让子线程用一下 CPU
+		dwKeyPad1 = GetGameInput();
 		usleep(300);
 	}
 	return(0);
@@ -741,8 +733,7 @@ void InfoNES_PadState( DWORD *pdwPad1, DWORD *pdwPad2, DWORD *pdwSystem )
 	*pdwPad1	= dwKeyPad1;
 	*pdwPad2	= dwKeyPad2;
 	*pdwSystem	= dwKeySystem;
-	
-	//取消重置手柄 在 输入函数中自行处理
+
 	//dwKeyPad1 = 0;
 }
 
