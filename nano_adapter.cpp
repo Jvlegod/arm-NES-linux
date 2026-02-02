@@ -1,14 +1,10 @@
-/*===================================================================*/
-/*                                                                   */
-/*  InfoNES_System_Linux.cpp : Linux specific File                   */
-/*                                                                   */
-/*  2001/05/18  InfoNES Project ( Sound is based on DarcNES )        */
-/*                                                                   */
-/*===================================================================*/
 
-/*-------------------------------------------------------------------*/
-/*  Include files                                                    */
-/*-------------------------------------------------------------------*/
+#include <stdint.h>
+
+#include "InfoNES.h"
+#include "InfoNES_System.h"
+#include "InfoNES_pAPU.h"
+#include "../NanoArch/src/core_api.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,10 +17,6 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <alsa/asoundlib.h>
-
-#include "../InfoNES.h"
-#include "../InfoNES_System.h"
-#include "../InfoNES_pAPU.h"
 
 //bool define
 #define TRUE 1
@@ -43,25 +35,25 @@
 
 #include <fcntl.h>
 
-static snd_pcm_t *playback_handle;
-
+static snd_pcm_t *playback_handle = NULL;
 static int fb_fd = -1;
-static unsigned char *fb_mem;
+static unsigned char *fb_mem = NULL;
 static int px_width;
 static int line_width;
 static int screen_width;
 static int lcd_width;
 static int lcd_height;
 static struct fb_var_screeninfo var;
-
 static int *zoom_x_tab;
 static int *zoom_y_tab;
 
 extern int InitGameInput(void);
 extern int GetGameInput(void);
+extern int ExitGameInput(void);
 
 extern int AdapterInitGameInput(void);
 extern int AdapterGetGameInput(void);
+extern int AdapterExitGameInput(void);
 
 static inline void rgb555_to_rgb888(uint16_t c, uint8_t *r, uint8_t *g, uint8_t *b)
 {
@@ -191,8 +183,8 @@ int	nSRAM_SaveFlag;
 /*-------------------------------------------------------------------*/
 
 /* Emulation thread */
-pthread_t  emulation_tid;
-int bThread;
+pthread_t  emulation_tid = 0;
+int bThread = FALSE;
 
 /* Pad state */
 DWORD	dwKeyPad1;
@@ -205,19 +197,8 @@ int	waveptr;
 int	wavflag;
 int	sound_fd;
 
-/*-------------------------------------------------------------------*/
-/*  Function prototypes ( Linux specific )                           */
-/*-------------------------------------------------------------------*/
-
 void *emulation_thread( void *args );
-
-
-void start_application( char *filename );
-
-
 int LoadSRAM();
-
-
 int SaveSRAM();
 
 
@@ -234,106 +215,14 @@ WORD NesPalette[64] =
 	0x7f94, 0x73f4, 0x57d7, 0x5bf9, 0x4ffe, 0x0000, 0x0000, 0x0000
 };
 
-/*===================================================================*/
-/*                                                                   */
-/*                main() : Application main                          */
-/*                                                                   */
-/*===================================================================*/
-
-/* Application main */
-int main( int argc, char **argv )
-{
-	char cmd;
-
-	/*-------------------------------------------------------------------*/
-	/*  Pad Control                                                      */
-	/*-------------------------------------------------------------------*/
-
-	/* Initialize a pad state */
-	dwKeyPad1	= 0;
-	dwKeyPad2	= 0;
-	dwKeySystem = 0;
-
-	/*-------------------------------------------------------------------*/
-	/*  Load Cassette & Create Thread                                    */
-	/*-------------------------------------------------------------------*/
-
-	/* Initialize thread state */
-	bThread = FALSE;
-	
-	int i;
-	
-	// InitGameInput();
-	AdapterInitGameInput();
-
-	lcd_fb_init();
-
-	make_zoom_tab();
-
-	/* If a rom name specified, start it */
-	if ( argc == 2 )
-	{
-		start_application( argv[1] );
-	}
-
-	while(1)
-	{
-		// dwKeyPad1 = GetGameInput();
-		dwKeyPad1 = AdapterGetGameInput();
-		usleep(300);
-	}
-	return(0);
-}
-
-
-/*===================================================================*/
-/*                                                                   */
-/*           emulation_thread() : Thread Hooking Routine             */
-/*                                                                   */
-/*===================================================================*/
-
 void *emulation_thread( void *args )
 {
 	InfoNES_Main();
+    return NULL;
 }
 
-/*===================================================================*/
-/*                                                                   */
-/*     start_application() : Start NES Hardware                      */
-/*                                                                   */
-/*===================================================================*/
-void start_application( char *filename )
-{
-	/* Set a ROM image name */
-	strcpy( szRomName, filename );
-
-	/* Load cassette */
-	if ( InfoNES_Load( szRomName ) == 0 )
-	{
-		/* Load SRAM */
-		LoadSRAM();
-
-		/* Create Emulation Thread */
-		bThread = TRUE;
-		pthread_create( &emulation_tid, NULL, emulation_thread, NULL );
-	}
-}
-
-
-/*===================================================================*/
-/*                                                                   */
-/*           LoadSRAM() : Load a SRAM                                */
-/*                                                                   */
-/*===================================================================*/
 int LoadSRAM()
 {
-/*
- *  Load a SRAM
- *
- *  Return values
- *     0 : Normally
- *    -1 : SRAM data couldn't be read
- */
 
 	FILE		*fp;
 	unsigned char	pSrcBuf[SRAM_SIZE];
@@ -358,10 +247,6 @@ int LoadSRAM()
 	strcpy( szSaveName, szRomName );
 	strcpy( strrchr( szSaveName, '.' ) + 1, "srm" );
 
-	/*-------------------------------------------------------------------*/
-	/*  Read a SRAM data                                                 */
-	/*-------------------------------------------------------------------*/
-
 	/* Open SRAM file */
 	fp = fopen( szSaveName, "rb" );
 	if ( fp == NULL )
@@ -372,10 +257,6 @@ int LoadSRAM()
 
 	/* Close SRAM file */
 	fclose( fp );
-
-	/*-------------------------------------------------------------------*/
-	/*  Extract a SRAM data                                              */
-	/*-------------------------------------------------------------------*/
 
 	nDecoded	= 0;
 	nDecLen		= 0;
@@ -403,22 +284,8 @@ int LoadSRAM()
 	return(0);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*           SaveSRAM() : Save a SRAM                                */
-/*                                                                   */
-/*===================================================================*/
 int SaveSRAM()
 {
-/*
- *  Save a SRAM
- *
- *  Return values
- *     0 : Normally
- *    -1 : SRAM data couldn't be written
- */
-
 	FILE		*fp;
 	int		nUsedTable[256];
 	unsigned char	chData;
@@ -432,10 +299,6 @@ int SaveSRAM()
 
 	if ( !nSRAM_SaveFlag )
 		return(0);  /* It doesn't need to save it */
-
-	/*-------------------------------------------------------------------*/
-	/*  Compress a SRAM data                                             */
-	/*-------------------------------------------------------------------*/
 
 	memset( nUsedTable, 0, sizeof nUsedTable );
 
@@ -488,10 +351,6 @@ int SaveSRAM()
 			pDstBuf[nEncLen++] = chPrevData;
 	}
 
-	/*-------------------------------------------------------------------*/
-	/*  Write a SRAM data                                                */
-	/*-------------------------------------------------------------------*/
-
 	/* Open SRAM file */
 	fp = fopen( szSaveName, "wb" );
 	if ( fp == NULL )
@@ -507,51 +366,17 @@ int SaveSRAM()
 	return(0);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*                  InfoNES_Menu() : Menu screen                     */
-/*                                                                   */
-/*===================================================================*/
 int InfoNES_Menu()
 {
-/*
- *  Menu screen
- *
- *  Return values
- *     0 : Normally
- *    -1 : Exit InfoNES
- */
-
-	/* If terminated */
 	if ( bThread == FALSE )
 	{
 		return(-1);
 	}
-
-	/* Nothing to do here */
 	return(0);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*               InfoNES_ReadRom() : Read ROM image file             */
-/*                                                                   */
-/*===================================================================*/
 int InfoNES_ReadRom( const char *pszFileName )
 {
-/*
- *  Read ROM image file
- *
- *  Parameters
- *    const char *pszFileName          (Read)
- *
- *  Return values
- *     0 : Normally
- *    -1 : Error
- */
-
 	FILE *fp;
 
 	/* Open ROM file */
@@ -599,19 +424,8 @@ int InfoNES_ReadRom( const char *pszFileName )
 	return(0);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*           InfoNES_ReleaseRom() : Release a memory for ROM         */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_ReleaseRom()
 {
-/*
- *  Release a memory for ROM
- *
- */
-
 	if ( ROM )
 	{
 		free( ROM );
@@ -625,71 +439,17 @@ void InfoNES_ReleaseRom()
 	}
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*             InfoNES_MemoryCopy() : memcpy                         */
-/*                                                                   */
-/*===================================================================*/
 void *InfoNES_MemoryCopy( void *dest, const void *src, int count )
 {
-/*
- *  memcpy
- *
- *  Parameters
- *    void *dest                       (Write)
- *      Points to the starting address of the copied block's destination
- *
- *    const void *src                  (Read)
- *      Points to the starting address of the block of memory to copy
- *
- *    int count                        (Read)
- *      Specifies the size, in bytes, of the block of memory to copy
- *
- *  Return values
- *    Pointer of destination
- */
-
 	memcpy( dest, src, count );
 	return(dest);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*             InfoNES_MemorySet() : memset                          */
-/*                                                                   */
-/*===================================================================*/
 void *InfoNES_MemorySet( void *dest, int c, int count )
 {
-/*
- *  memset
- *
- *  Parameters
- *    void *dest                       (Write)
- *      Points to the starting address of the block of memory to fill
- *
- *    int c                            (Read)
- *      Specifies the byte value with which to fill the memory block
- *
- *    int count                        (Read)
- *      Specifies the size, in bytes, of the block of memory to fill
- *
- *  Return values
- *    Pointer of destination
- */
-
 	memset( dest, c, count );
 	return(dest);
 }
-
-
-/*===================================================================*/
-/*                                                                   */
-/*      InfoNES_LoadFrame() :                                        */
-/*           Transfer the contents of work frame on the screen       */
-/*                                                                   */
-/*===================================================================*/
 
 void InfoNES_LoadFrame()
 {
@@ -712,53 +472,21 @@ void InfoNES_LoadFrame()
 	}
 }
 
-/*===================================================================*/
-/*                                                                   */
-/*             InfoNES_PadState() : Get a joypad state               */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_PadState( DWORD *pdwPad1, DWORD *pdwPad2, DWORD *pdwSystem )
 {
-/*
- *  Get a joypad state
- *
- *  Parameters
- *    DWORD *pdwPad1                   (Write)
- *      Joypad 1 State
- *
- *    DWORD *pdwPad2                   (Write)
- *      Joypad 2 State
- *
- *    DWORD *pdwSystem                 (Write)
- *      Input for InfoNES
- *
- */
-
 	/* Transfer joypad state */
 	*pdwPad1	= dwKeyPad1;
 	*pdwPad2	= dwKeyPad2;
 	*pdwSystem	= dwKeySystem;
 
-	//dwKeyPad1 = 0;
+	dwKeyPad1 = 0;
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*        InfoNES_SoundInit() : Sound Emulation Initialize           */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_SoundInit( void )
 {
 	
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*        InfoNES_SoundOpen() : Sound Open                           */
-/*                                                                   */
-/*===================================================================*/
 int InfoNES_SoundOpen( int samples_per_sync, int sample_rate )
 {
 	//sample_rate 采样率 44100
@@ -825,23 +553,12 @@ int InfoNES_SoundOpen( int samples_per_sync, int sample_rate )
 	return 1;
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*        InfoNES_SoundClose() : Sound Close                         */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_SoundClose( void )
 {
+    return;
 	snd_pcm_close(playback_handle);
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*            InfoNES_SoundOutput() : Sound Output 5 Waves           */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_SoundOutput( int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BYTE *wave4, BYTE *wave5 )
 {
 	int i;
@@ -864,28 +581,95 @@ void InfoNES_SoundOutput( int samples, BYTE *wave1, BYTE *wave2, BYTE *wave3, BY
 	return ;
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*            InfoNES_Wait() : Wait Emulation if required            */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_Wait()
 {
 }
 
-
-/*===================================================================*/
-/*                                                                   */
-/*            InfoNES_MessageBox() : Print System Message            */
-/*                                                                   */
-/*===================================================================*/
 void InfoNES_MessageBox(const char *pszMsg, ... )
 {
 	printf( "MessageBox: %s \n", pszMsg );
 }
 
+extern "C" {
 
-/*
- * End of InfoNES_System_Linux.cpp
- */
+    static void core_init() {
+        playback_handle = NULL;
+        fb_mem = NULL;
+        fb_fd = -1;
+        emulation_tid = 0;
+        zoom_x_tab = NULL;
+        zoom_y_tab = NULL;
+    }
+    
+    static void core_load_game(const char* path) {
+        printf("[Core] Loading game: %s\n", path);
+        
+        AdapterInitGameInput();
+        if (lcd_fb_init() != 0) {
+             printf("[Core] LCD Init Failed\n");
+             return;
+        }
+        
+        if (make_zoom_tab() != 1) {
+             printf("[Core] Zoom Tab Failed\n");
+             return;
+        }
+
+        if (InfoNES_Load(path) == 0) {
+            LoadSRAM();
+            printf("[Core] Init success\n");
+        } else {
+            printf("[Core] Load failed\n");
+        }
+
+        InfoNES_Init();
+        bThread = TRUE;
+		pthread_create( &emulation_tid, NULL, emulation_thread, NULL );
+    }
+
+    static void core_run_frame(uint32_t* buffer) {
+		dwKeyPad1 = AdapterGetGameInput();
+		printf("KeyPad1: %u\n", dwKeyPad1);
+    }
+
+    static void core_input(uint32_t keys) {
+    }
+
+    static void core_cleanup() {
+        printf("[Core] Begin cleaning up...\n");
+        bThread = FALSE; 
+        if (emulation_tid != 0) {
+            pthread_join(emulation_tid, NULL);
+            emulation_tid = 0;
+        }
+
+        if (fb_mem && fb_mem != (void*)-1) {
+            munmap(fb_mem, var.yres * var.xres * (var.bits_per_pixel / 8));
+            fb_mem = NULL;
+        }
+
+        if (fb_fd >= 0) {
+            close(fb_fd);
+            fb_fd = -1;
+        }
+
+        if (zoom_x_tab) { free(zoom_x_tab); zoom_x_tab = NULL; }
+        if (zoom_y_tab) { free(zoom_y_tab); zoom_y_tab = NULL; }
+        
+        AdapterExitGameInput();
+        
+        printf("[Core] Cleaning up success\n");
+    }
+
+    NanoCore* get_core() {
+        static NanoCore core = {
+            "InfoNES (NES)",
+            core_init,
+            core_load_game,
+            core_run_frame,
+            core_input,
+            core_cleanup
+        };
+        return &core;
+    }
+}

@@ -593,7 +593,12 @@ void InfoNES_Cycle()
 
   // Emulation loop
   for (;;)
-  {    
+  {  
+    // for adapter NanoArch  
+    if ( InfoNES_Menu() == -1 ) {
+        break; 
+    }
+
     int nStep;
 
     // Set a flag if a scanning line is a hit in the sprite #0

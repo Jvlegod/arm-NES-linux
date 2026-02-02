@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 // keyboard input device
-#define JOYPAD_DEV "/dev/input/event1"
+#define JOYPAD_DEV "/dev/input/event3"
 // USB joystick device
 #define USB_JS_DEV "/dev/input/js0"
 // touch screen device
@@ -220,7 +220,6 @@ static int joypadGet(void)
         if (ev.type == EV_KEY)
         {
 			// debug
-			printf("[DEBUG] Event Received: Code=%d, Value=%d\n", ev.code, ev.value);
             int pressed = (ev.value != 0); 
 
             switch (ev.code)
@@ -408,4 +407,66 @@ int GetGameInput(void)
 	pthread_cond_wait(&g_tConVar, &g_tMutex);	
 	pthread_mutex_unlock(&g_tMutex);
 	return g_InputEvent;
+}
+
+int ExitGameInput(void)
+{
+	joypadInput.DevExit();
+	usbJoypadInput.DevExit();
+	touchInput.DevExit();
+	return 0;
+}
+
+/*==============================*/
+/*     Adapter Game Input       */
+/*==============================*/
+static int adapter_joypad_fd = -1;
+static unsigned int g_CurrentJoypadState = 0;
+
+int AdapterInitGameInput(void)
+{
+    adapter_joypad_fd = open("/dev/input/event3", O_RDONLY | O_NONBLOCK);
+    if(adapter_joypad_fd == -1)
+    {
+        printf("Error opening adapter joypad device\n");
+        return -1;
+    }
+    g_CurrentJoypadState = 0;
+    return 0;
+}
+
+int AdapterGetGameInput(void)
+{
+    if (adapter_joypad_fd != -1) {
+		struct input_event ev;
+		while (read(adapter_joypad_fd, &ev, sizeof(struct input_event)) > 0)
+		{
+			printf("[DEBUG] Event Received: Code=%d, Value=%d\n", ev.code, ev.value);
+			if (ev.type == EV_KEY)
+			{
+				int pressed = (ev.value != 0);
+				switch (ev.code)
+				{
+					case 103: /* UP */    if(pressed) g_CurrentJoypadState |= (1<<4); else g_CurrentJoypadState &= ~(1<<4); break;
+					case 108: /* DOWN */  if(pressed) g_CurrentJoypadState |= (1<<5); else g_CurrentJoypadState &= ~(1<<5); break;
+					case 105: /* LEFT */  if(pressed) g_CurrentJoypadState |= (1<<6); else g_CurrentJoypadState &= ~(1<<6); break;
+					case 106: /* RIGHT */ if(pressed) g_CurrentJoypadState |= (1<<7); else g_CurrentJoypadState &= ~(1<<7); break;
+					case 44:  /* Z/A */   if(pressed) g_CurrentJoypadState |= (1<<0); else g_CurrentJoypadState &= ~(1<<0); break;
+					case 45:  /* X/B */   if(pressed) g_CurrentJoypadState |= (1<<1); else g_CurrentJoypadState &= ~(1<<1); break;
+					case 28:  /* Enter */ if(pressed) g_CurrentJoypadState |= (1<<3); else g_CurrentJoypadState &= ~(1<<3); break; // Start
+					case 1:   /* Esc */   if(pressed) g_CurrentJoypadState |= (1<<2); else g_CurrentJoypadState &= ~(1<<2); break; // Select
+				}
+			}
+		}
+    }
+    return g_CurrentJoypadState;
+}
+
+int AdapterExitGameInput(void)
+{
+    if(adapter_joypad_fd != -1) {
+        close(adapter_joypad_fd);
+        adapter_joypad_fd = -1;
+    }
+    return 0;
 }
