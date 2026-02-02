@@ -3,13 +3,11 @@
 TARBALL = InfoNES08J
 
 # InfoNES
-.CFILES =	./../K6502.cpp \
-		./../InfoNES.cpp \
-		./../InfoNES_Mapper.cpp \
-		./../InfoNES_pAPU.cpp \
+.CFILES =	./K6502.cpp \
+		./InfoNES.cpp \
+		./InfoNES_Mapper.cpp \
+		./InfoNES_pAPU.cpp \
 		./InfoNES_System_Linux.cpp
-
-.CFILES += ./game_input.cpp
 
 .OFILES	=	$(.CFILES:.cpp=.o)
 
