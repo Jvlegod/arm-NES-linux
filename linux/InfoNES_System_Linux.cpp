@@ -280,6 +280,30 @@ int main( int argc, char **argv )
 	{
 		// dwKeyPad1 = GetGameInput();
 		dwKeyPad1 = AdapterGetGameInput();
+		
+		if (dwKeyPad1 & (1 << 2)) {
+            printf("[InfoNES] ESC pressed. Exiting...\n");
+
+            bThread = FALSE; 
+            if (emulation_tid) {
+                pthread_join(emulation_tid, NULL);
+            }
+
+            InfoNES_SoundClose();
+
+            if (fb_mem && fb_mem != (void*)-1) {
+                munmap(fb_mem, screen_width);
+            }
+            if (fb_fd >= 0) {
+                close(fb_fd);
+            }
+
+            if (zoom_x_tab) free(zoom_x_tab);
+            if (zoom_y_tab) free(zoom_y_tab);
+
+            exit(0); 
+        }
+		
 		usleep(300);
 	}
 	return(0);
